@@ -127,7 +127,7 @@ def create_kpi_cards():
         dbc.Col([
             dbc.Card([
                 dbc.CardBody([
-                    html.H6("Correlation", className="text-muted"),
+                    html.H6("Mobility vs AI Correlation", className="text-muted"),
                     html.H2(f"{pearson_r:.3f}", className="text-info"),
                     html.P(f"p < 0.001 {'✓' if p_value < 0.05 else '✗'}", className="text-sm")
                 ])
@@ -549,10 +549,12 @@ app.layout = dbc.Container([
     # Header
     dbc.Row([
         dbc.Col([
-            html.H1("📊 Economic Mobility & AI Displacement Analysis", 
+            html.H1("▪ Economic Mobility & AI Displacement Analysis", 
                    className="text-primary mb-2"),
             html.P("Interactive dashboard exploring the relationship between economic mobility and AI-driven job displacement risk across U.S. counties",
                   className="lead text-muted"),
+            html.P("Created by Cesar Monagas and London Chamberlain",
+                  className="text-muted mb-3", style={"fontStyle": "italic"}),
             html.Hr()
         ])
     ], className="mt-4 mb-3"),
@@ -565,7 +567,7 @@ app.layout = dbc.Container([
         dbc.Col([
             dbc.Card([
                 dbc.CardHeader([
-                    html.H5("🗺️ Geographic Visualization", className="mb-0"),
+                    html.H5("▲ Geographic Visualization", className="mb-0"),
                 ]),
                 dbc.CardBody([
                     dbc.Row([
@@ -574,9 +576,9 @@ app.layout = dbc.Container([
                             dcc.Dropdown(
                                 id='map-metric-dropdown',
                                 options=[
-                                    {'label': '📍 County Classification', 'value': 'category'},
-                                    {'label': '📈 Mobility Score', 'value': 'mobility_score'},
-                                    {'label': '🤖 AI Exposure', 'value': 'ai_exposure'}
+                                    {'label': '● County Classification', 'value': 'category'},
+                                    {'label': '▲ Mobility Score', 'value': 'mobility_score'},
+                                    {'label': '■ AI Exposure', 'value': 'ai_exposure'}
                                 ],
                                 value='category',
                                 clearable=False
@@ -591,14 +593,14 @@ app.layout = dbc.Container([
         dbc.Col([
             dbc.Card([
                 dbc.CardHeader([
-                    html.H5("📋 State Rankings", className="mb-0"),
+                    html.H5("■ State Rankings", className="mb-0"),
                 ]),
                 dbc.CardBody([
                     dcc.Dropdown(
                         id='ranking-metric-dropdown',
                         options=[
-                            {'label': '📈 By Mobility Score', 'value': 'mobility_score'},
-                            {'label': '🛡️ By AI Protection', 'value': 'ai_exposure'}
+                            {'label': '▲ By Mobility Score', 'value': 'mobility_score'},
+                            {'label': '♦ By AI Protection', 'value': 'ai_exposure'}
                         ],
                         value='mobility_score',
                         clearable=False,
@@ -615,7 +617,7 @@ app.layout = dbc.Container([
         dbc.Col([
             dbc.Card([
                 dbc.CardHeader([
-                    html.H5("📉 Correlation Analysis", className="mb-0"),
+                    html.H5("▼ Correlation Analysis", className="mb-0"),
                 ]),
                 dbc.CardBody([
                     dbc.Row([
@@ -655,7 +657,7 @@ app.layout = dbc.Container([
         dbc.Col([
             dbc.Card([
                 dbc.CardHeader([
-                    html.H5("📊 Mobility Distribution", className="mb-0"),
+                    html.H5("▬ Mobility Distribution", className="mb-0"),
                 ]),
                 dbc.CardBody([
                     dcc.Graph(id='mobility-distribution', figure=create_distribution_plots(),
@@ -667,7 +669,7 @@ app.layout = dbc.Container([
         dbc.Col([
             dbc.Card([
                 dbc.CardHeader([
-                    html.H5("📊 AI Exposure Distribution", className="mb-0"),
+                    html.H5("▬ AI Exposure Distribution", className="mb-0"),
                 ]),
                 dbc.CardBody([
                     dcc.Graph(id='ai-distribution', figure=create_ai_distribution_plot(),
@@ -679,7 +681,7 @@ app.layout = dbc.Container([
         dbc.Col([
             dbc.Card([
                 dbc.CardHeader([
-                    html.H5("📊 Category Breakdown", className="mb-0"),
+                    html.H5("▬ Category Breakdown", className="mb-0"),
                 ]),
                 dbc.CardBody([
                     dcc.Graph(id='category-breakdown', figure=create_category_breakdown(),
@@ -757,16 +759,16 @@ def update_ranking_table(metric):
 
 if __name__ == '__main__':
     print("\n" + "="*70)
-    print("🚀 LAUNCHING INTERACTIVE DASHBOARD")
+    print("▶ LAUNCHING INTERACTIVE DASHBOARD")
     print("="*70)
-    print("📊 Dashboard Features:")
+    print("▪ Dashboard Features:")
     print("   • 5 Interactive KPI Cards")
     print("   • Geographic Choropleth Map")
     print("   • State/County-Level Scatter Analysis")
     print("   • Distribution Histograms")
     print("   • Category Breakdown Chart")
     print("   • State Rankings Table")
-    print("\n🌐 Opening dashboard in your browser...")
+    print("\n● Opening dashboard in your browser...")
     print("   URL: http://127.0.0.1:8050/")
     print("   Press CTRL+C to stop the server")
     print("="*70 + "\n")
