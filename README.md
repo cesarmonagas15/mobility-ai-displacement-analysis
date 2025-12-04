@@ -32,6 +32,12 @@ python src/dashboard/interactive_dashboard.py
 
 The dashboard will open at: **http://127.0.0.1:8050/**
 
+### 🌐 Online Access
+
+**GitHub Pages (Static):** [View Dashboard](https://cesarmonagas15.github.io/mobility-ai-displacement-analysis/)
+
+For full interactive features, see [Deployment Guide](docs/DEPLOYMENT.md) for hosting options.
+
 ## 📁 Project Structure
 
 ```

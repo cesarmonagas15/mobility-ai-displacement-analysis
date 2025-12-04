@@ -15,6 +15,15 @@ import numpy as np
 from scipy import stats
 import requests
 import json
+import pickle
+import os
+import sys
+
+# Add src directory to path for ML analysis
+script_dir = os.path.dirname(os.path.abspath(__file__))
+src_dir = os.path.join(script_dir, '..')
+if src_dir not in sys.path:
+    sys.path.insert(0, src_dir)
 
 # =============================================================================
 # DATA LOADING AND PREPARATION
@@ -66,6 +75,55 @@ counties_geojson = requests.get(url).json()
 
 # Calculate correlation statistics
 pearson_r, p_value = stats.pearsonr(merged_data['mobility_score'], merged_data['ai_exposure'])
+
+# Load or run ML analysis
+ml_results = None
+ml_results_path = os.path.join(script_dir, '..', '..', 'data', 'processed', 'ml_results.pkl')
+if os.path.exists(ml_results_path):
+    try:
+        print("Loading ML analysis results...")
+        with open(ml_results_path, 'rb') as f:
+            ml_results = pickle.load(f)
+        print("ML results loaded successfully!")
+    except Exception as e:
+        print(f"Error loading ML results: {e}")
+        ml_results = None
+else:
+    print("ML results not found. Running ML analysis...")
+    try:
+        try:
+            import sklearn
+        except ImportError:
+            print("ERROR: scikit-learn is not installed. Please run: pip install scikit-learn")
+            ml_results = None
+        else:
+            try:
+                from ml_analysis import run_ml_analysis
+            except ImportError as ie:
+                print(f"ERROR: Could not import ml_analysis module: {ie}")
+                ml_results = None
+            else:
+                try:
+                    results_dict, feature_names, X_test, y_test, scaler = run_ml_analysis(merged_data)
+                    ml_results = {
+                        'results': results_dict,
+                        'feature_names': feature_names,
+                        'X_test': X_test,
+                        'y_test': y_test
+                    }
+                    with open(ml_results_path, 'wb') as f:
+                        pickle.dump(ml_results, f)
+                    print("ML analysis completed and saved!")
+                except Exception as e:
+                    import traceback
+                    print(f"Error running ML analysis: {e}")
+                    traceback.print_exc()
+                    ml_results = None
+    except Exception as e:
+        import traceback
+        print(f"Unexpected error in ML analysis setup: {e}")
+        traceback.print_exc()
+        ml_results = None
 
 print("Data loaded successfully!")
 
@@ -174,7 +232,6 @@ def create_choropleth_map(selected_metric='category'):
             locations='county_fips',
             color='category',
             color_discrete_map=color_map,
-            scope="usa",
             hover_data={
                 'county_name': True,
                 'state_name': True,
@@ -186,6 +243,65 @@ def create_choropleth_map(selected_metric='category'):
             labels={'category': 'Classification'},
             title='County Classification: Mobility vs AI Risk'
         )
+    elif selected_metric == 'category_intensity':
+        # Same categories, but shade intensity by distance from median mobility & AI exposure
+        color_map = {
+            'Double Disadvantage': '#d62728',
+            'Tech Disruption': '#ff7f0e',
+            'Safe': '#2ca02c',
+            'Stagnant Protected': '#1f77b4'
+        }
+        
+        fig = px.choropleth(
+            merged_data,
+            geojson=counties_geojson,
+            locations='county_fips',
+            color='category',
+            color_discrete_map=color_map,
+            hover_data={
+                'county_name': True,
+                'state_name': True,
+                'mobility_score': ':.3f',
+                'ai_exposure': ':.3f',
+                'county_fips': False,
+                'category': True
+            },
+            labels={'category': 'Classification'},
+            title='County Classification (Intensity by Distance from Median)'
+        )
+        
+        # Compute how "extreme" each county is relative to the median in mobility & AI exposure
+        mob_std = merged_data['mobility_score'].std()
+        ai_std = merged_data['ai_exposure'].std()
+        # Avoid division by zero
+        mob_std = mob_std if mob_std > 0 else 1.0
+        ai_std = ai_std if ai_std > 0 else 1.0
+        
+        mobility_z = (merged_data['mobility_score'] - mobility_median) / mob_std
+        ai_z = (merged_data['ai_exposure'] - ai_median) / ai_std
+        dist = np.sqrt(mobility_z**2 + ai_z**2)
+        dist_norm = (dist - dist.min()) / (dist.max() - dist.min() + 1e-9)
+        # Sharpen contrast so only the most extreme counties are very dark
+        # (square the normalized distance so mid-range values become much lighter)
+        dist_sharp = np.clip(dist_norm**2, 0.0, 1.0)
+        
+        def hex_to_rgb(hex_color):
+            hex_color = hex_color.lstrip('#')
+            return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+        
+        shaded_colors = []
+        for cat, t in zip(merged_data['category'], dist_sharp):
+            base_hex = color_map.get(cat, '#808080')
+            r, g, b = hex_to_rgb(base_hex)
+            # t in [0,1]; 0 = very close to median (almost white), 1 = most extreme (full base color)
+            new_r = int(255 - (255 - r) * t)
+            new_g = int(255 - (255 - g) * t)
+            new_b = int(255 - (255 - b) * t)
+            shaded_colors.append(f'rgb({new_r},{new_g},{new_b})')
+        
+        # Apply shaded colors while keeping the category legend
+        if fig.data:
+            fig.data[0].marker.update(color=shaded_colors, showscale=False)
     elif selected_metric == 'mobility_score':
         fig = px.choropleth(
             merged_data,
@@ -193,7 +309,6 @@ def create_choropleth_map(selected_metric='category'):
             locations='county_fips',
             color='mobility_score',
             color_continuous_scale='RdYlGn',
-            scope="usa",
             hover_data={
                 'county_name': True,
                 'state_name': True,
@@ -210,7 +325,6 @@ def create_choropleth_map(selected_metric='category'):
             locations='county_fips',
             color='ai_exposure',
             color_continuous_scale='RdYlGn_r',
-            scope="usa",
             hover_data={
                 'county_name': True,
                 'state_name': True,
@@ -221,24 +335,18 @@ def create_choropleth_map(selected_metric='category'):
             title='AI Exposure Score by County'
         )
     
-    # Configure map to include all US territories including Puerto Rico
-    # Use fitbounds to automatically include all locations in the data
-    # This should include Puerto Rico counties if they're in the data
+    # Configure map to focus on the contiguous US and keep it centered
     fig.update_geos(
         visible=False,
-        fitbounds="locations",
-        projection_scale=0.8
+        projection_type="albers usa",
+        projection_scale=0.6,
+        center={"lat": 38, "lon": -96}
     )
-    # Set center after fitbounds to maintain good centering for continental US
     fig.update_layout(
-        height=500,
-        margin={"r":20,"t":40,"l":20,"b":20},
+        height=430,
+        margin={"r":10, "t":40, "l":10, "b":10},
         paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
-        geo=dict(
-            center=dict(lat=38, lon=-96),
-            projection_scale=0.8
-        )
+        plot_bgcolor='rgba(0,0,0,0)'
     )
     
     return fig
@@ -525,6 +633,219 @@ def create_category_breakdown():
     return fig
 
 
+def create_ml_model_comparison(selected_model='Logistic Regression'):
+    """Create ML model comparison visualization with toggleable models"""
+    
+    if ml_results is None:
+        try:
+            import sklearn
+            sklearn_available = True
+        except ImportError:
+            sklearn_available = False
+        
+        fig = go.Figure()
+        if not sklearn_available:
+            error_msg = (
+                "ML analysis requires scikit-learn.<br><br>" +
+                "Please install it by running:<br>" +
+                "<code>pip install scikit-learn</code><br><br>" +
+                "Then restart the dashboard."
+            )
+        else:
+            error_msg = (
+                "ML analysis results not available.<br><br>" +
+                "The ML analysis will run automatically when the dashboard loads.<br>" +
+                "This may take a few moments...<br><br>" +
+                "If this message persists, check the console for error messages."
+            )
+        
+        fig.add_annotation(
+            text=error_msg,
+            xref="paper", yref="paper",
+            x=0.5, y=0.5,
+            showarrow=False,
+            font=dict(size=12, color="gray"),
+            align="left"
+        )
+        fig.update_layout(
+            title='Machine Learning Model Comparison',
+            height=500,
+            xaxis=dict(visible=False),
+            yaxis=dict(visible=False),
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(255,255,255,1)'
+        )
+        return fig
+    
+    results = ml_results['results']
+    
+    if selected_model not in results:
+        selected_model = 'Logistic Regression'
+    
+    model_data = results[selected_model]
+    
+    # Create subplot with confusion matrix and ROC curve
+    from plotly.subplots import make_subplots
+    
+    fig = make_subplots(
+        rows=1, cols=2,
+        subplot_titles=('Confusion Matrix', 'ROC Curve'),
+        column_widths=[0.5, 0.5],
+        specs=[[{"type": "heatmap"}, {"type": "scatter"}]],
+        horizontal_spacing=0.2
+    )
+    
+    # Confusion Matrix
+    cm = model_data['confusion_matrix']
+    cm_percent = (cm.astype('float') / cm.sum(axis=1)[:, np.newaxis] * 100).round(1)
+    
+    labels = ['Not Double Disadvantage', 'Double Disadvantage']
+    
+    fig.add_trace(
+        go.Heatmap(
+            z=cm,
+            x=labels,
+            y=labels,
+            text=[[f'{int(cm[i][j])}<br>({cm_percent[i][j]:.1f}%)' 
+                   for j in range(len(labels))] 
+                  for i in range(len(labels))],
+            texttemplate='%{text}',
+            textfont={"size": 13},
+            colorscale='Blues',
+            showscale=True,
+            colorbar=dict(title="Count", x=0.42, len=0.6)
+        ),
+        row=1, col=1
+    )
+    
+    # ROC Curve
+    from sklearn.metrics import roc_curve
+    fpr, tpr, _ = roc_curve(model_data['true_labels'], model_data['probabilities'])
+    auc_score = model_data['roc_auc']
+    
+    fig.add_trace(
+        go.Scatter(
+            x=fpr,
+            y=tpr,
+            mode='lines',
+            name=f'{selected_model}<br>AUC = {auc_score:.3f}',
+            line=dict(width=3, color='#1f77b4'),
+            fill='tonexty',
+            fillcolor='rgba(31, 119, 180, 0.2)'
+        ),
+        row=1, col=2
+    )
+    
+    # Add diagonal line for random classifier
+    fig.add_trace(
+        go.Scatter(
+            x=[0, 1],
+            y=[0, 1],
+            mode='lines',
+            name='Random<br>AUC = 0.500',
+            line=dict(dash='dash', color='gray', width=2),
+            showlegend=True
+        ),
+        row=1, col=2
+    )
+    
+    # Update layout with better spacing
+    fig.update_layout(
+        title=dict(text=f'Model Performance: {selected_model}', font=dict(size=16)),
+        height=500,
+        showlegend=True,
+        template='plotly_white',
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(255,255,255,1)',
+        margin=dict(l=80, r=80, t=80, b=60)
+    )
+    
+    fig.update_xaxes(title_text="Predicted Label", row=1, col=1, title_font=dict(size=12))
+    fig.update_yaxes(title_text="True Label", row=1, col=1, title_font=dict(size=12))
+    fig.update_xaxes(title_text="False Positive Rate", row=1, col=2, title_font=dict(size=12))
+    fig.update_yaxes(title_text="True Positive Rate", row=1, col=2, title_font=dict(size=12))
+    
+    # Update subplot titles with better spacing
+    fig.update_annotations(font_size=13, yshift=15)
+    
+    return fig
+
+
+def create_ml_performance_comparison():
+    """Create performance metrics comparison across all models"""
+    
+    if ml_results is None:
+        return None
+    
+    results = ml_results['results']
+    
+    # Extract metrics for all models
+    models = list(results.keys())
+    metrics_data = {
+        'Model': models,
+        'Accuracy': [results[m]['accuracy'] for m in models],
+        'Precision': [results[m]['precision'] for m in models],
+        'Recall': [results[m]['recall'] for m in models],
+        'F1-Score': [results[m]['f1'] for m in models],
+        'ROC-AUC': [results[m]['roc_auc'] for m in models]
+    }
+    
+    df = pd.DataFrame(metrics_data)
+    
+    # Create bar chart with consistent colors per metric
+    fig = go.Figure()
+    
+    # Assign a unique color to each metric (consistent across all models)
+    metric_colors = {
+        'Accuracy': '#1f77b4',      # Blue
+        'Precision': '#ff7f0e',      # Orange
+        'Recall': '#2ca02c',         # Green
+        'F1-Score': '#d62728',       # Red
+        'ROC-AUC': '#9467bd'         # Purple
+    }
+    
+    for metric in ['Accuracy', 'Precision', 'Recall', 'F1-Score', 'ROC-AUC']:
+        fig.add_trace(go.Bar(
+            name=metric,
+            x=df['Model'],
+            y=df[metric],
+            marker_color=metric_colors[metric],  # Same color for all bars of this metric
+            opacity=0.8
+        ))
+    
+    fig.update_layout(
+        title=dict(text='Model Performance Comparison', font=dict(size=14), y=0.98, yanchor='top'),
+        xaxis_title='Model',
+        yaxis_title='Score',
+        barmode='group',
+        height=480,  # Increased height for more vertical space
+        template='plotly_white',
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(255,255,255,1)',
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.25,  # Move legend much higher to prevent overlap
+            xanchor="center",
+            x=0.5,
+            font=dict(size=10),
+            itemwidth=30
+        ),
+        margin=dict(l=70, r=30, t=140, b=110),  # Much larger top margin for legend space
+        xaxis=dict(
+            tickangle=-20,
+            tickfont=dict(size=10),
+            title_font=dict(size=11)
+        ),
+        yaxis=dict(
+            tickfont=dict(size=10),
+            title_font=dict(size=11)
+        )
+    )
+    
+    return fig
+
+
 def create_ranking_table(level='state', metric='mobility_score', ranking_type='top', state_filter='all', top_n=10):
     """Create state or county ranking table"""
     
@@ -681,6 +1002,7 @@ app.layout = dbc.Container([
                                 id='map-metric-dropdown',
                                 options=[
                                     {'label': 'County Classification', 'value': 'category'},
+                                    {'label': 'County Classification (Intensity)', 'value': 'category_intensity'},
                                     {'label': 'Mobility Score', 'value': 'mobility_score'},
                                     {'label': 'AI Exposure', 'value': 'ai_exposure'}
                                 ],
@@ -825,6 +1147,46 @@ app.layout = dbc.Container([
         ], width=12)
     ], className="mb-4"),
     
+    # Main Content - Row 2.5: Machine Learning Model Comparison
+    dbc.Row([
+        dbc.Col([
+            dbc.Card([
+                dbc.CardHeader([
+                    html.H5("Machine Learning Model Comparison", className="mb-0"),
+                ]),
+                dbc.CardBody([
+                    html.P("Testing core hypothesis: Can mobility patterns predict Double Disadvantage counties? Models use only mobility and regional features to predict counties with low mobility AND high AI risk.",
+                          className="text-muted mb-3", style={"fontSize": "0.9rem"}),
+                    html.Label("Select Model:", className="fw-bold"),
+                    dcc.Dropdown(
+                        id='ml-model-dropdown',
+                        options=[
+                            {'label': 'Logistic Regression', 'value': 'Logistic Regression'},
+                            {'label': 'Lasso Regression', 'value': 'Lasso Regression'},
+                            {'label': 'Ridge Regression', 'value': 'Ridge Regression'},
+                            {'label': 'Random Forest', 'value': 'Random Forest'}
+                        ],
+                        value='Logistic Regression',
+                        clearable=False,
+                        className="mb-3"
+                    ),
+                    dcc.Graph(id='ml-model-comparison', config={'displayModeBar': False})
+                ])
+            ], className="shadow-sm")
+        ], width=12, lg=8),
+        dbc.Col([
+            dbc.Card([
+                dbc.CardHeader([
+                    html.H5("Performance Metrics", className="mb-0"),
+                ]),
+                dbc.CardBody([
+                    dcc.Graph(id='ml-performance-comparison', figure=create_ml_performance_comparison(),
+                             config={'displayModeBar': False})
+                ])
+            ], className="shadow-sm")
+        ], width=12, lg=4)
+    ], className="mb-4"),
+    
     # Main Content - Row 3: Distribution Charts
     dbc.Row([
         dbc.Col([
@@ -870,7 +1232,8 @@ app.layout = dbc.Container([
             html.Hr(),
             html.P([
                 "Data Sources: Opportunity Insights (County Trends) & Economic Census (AIOE Data) | ",
-                html.A("GitHub", href="#", className="text-decoration-none"),
+                html.A("GitHub", href="https://github.com/cesarmonagas15/mobility-ai-displacement-analysis", 
+                      className="text-decoration-none", target="_blank"),
             ], className="text-center text-muted small")
         ])
     ], className="mb-4")
@@ -903,8 +1266,8 @@ def update_map(selected_metric):
     Input('map-metric-dropdown', 'value')
 )
 def toggle_legend(selected_metric):
-    """Show legend only when classification view is active"""
-    if selected_metric == 'category':
+    """Show legend when a classification view is active"""
+    if selected_metric in ('category', 'category_intensity'):
         return {'padding': '10px', 'backgroundColor': '#f8f9fa', 'borderRadius': '5px', 'marginBottom': '1rem'}
     else:
         return {'display': 'none'}
@@ -957,11 +1320,21 @@ def update_ranking_table(level, metric, ranking_type, state_filter):
     return create_ranking_table(level=level, metric=metric, ranking_type=ranking_type, state_filter=state_filter)
 
 
+@app.callback(
+    Output('ml-model-comparison', 'figure'),
+    Input('ml-model-dropdown', 'value')
+)
+def update_ml_model_comparison(selected_model):
+    return create_ml_model_comparison(selected_model=selected_model)
+
+
 # =============================================================================
 # RUN APP
 # =============================================================================
 
 if __name__ == '__main__':
+    import os
+    
     print("\n" + "="*70)
     print("LAUNCHING INTERACTIVE DASHBOARD")
     print("="*70)
@@ -972,10 +1345,22 @@ if __name__ == '__main__':
     print("   • Distribution Histograms")
     print("   • Category Breakdown Chart")
     print("   • State Rankings Table")
+    print("   • Machine Learning Model Comparison")
     print("\n● Opening dashboard in your browser...")
-    print("   URL: http://127.0.0.1:8050/")
+    
+    # Get port from environment variable (for hosting services) or use default
+    port = int(os.environ.get('PORT', 8050))
+    host = os.environ.get('HOST', '127.0.0.1')
+    
+    # For production deployments, use 0.0.0.0 to accept external connections
+    if os.environ.get('PORT'):
+        host = '0.0.0.0'
+        print(f"   URL: http://0.0.0.0:{port}/")
+    else:
+        print(f"   URL: http://127.0.0.1:{port}/")
+    
     print("   Press CTRL+C to stop the server")
     print("="*70 + "\n")
     
-    app.run(debug=True, port=8050)
+    app.run(debug=False, host=host, port=port)
 
