@@ -221,17 +221,24 @@ def create_choropleth_map(selected_metric='category'):
             title='AI Exposure Score by County'
         )
     
+    # Configure map to include all US territories including Puerto Rico
+    # Use fitbounds to automatically include all locations in the data
+    # This should include Puerto Rico counties if they're in the data
     fig.update_geos(
         visible=False,
-        scope='usa',
-        projection_scale=0.9,
-        center={"lat": 38, "lon": -96}
+        fitbounds="locations",
+        projection_scale=0.8
     )
+    # Set center after fitbounds to maintain good centering for continental US
     fig.update_layout(
         height=500,
         margin={"r":20,"t":40,"l":20,"b":20},
         paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)'
+        plot_bgcolor='rgba(0,0,0,0)',
+        geo=dict(
+            center=dict(lat=38, lon=-96),
+            projection_scale=0.8
+        )
     )
     
     return fig
@@ -240,7 +247,7 @@ def create_choropleth_map(selected_metric='category'):
 def create_scatter_plot(level='state', selected_state=None):
     """Create scatter plot with regression"""
     
-    if level == 'state' or selected_state is None:
+    if level == 'state':
         data = state_summary
         x_col, y_col = 'mobility_score', 'ai_exposure'
         size_col = 'num_counties'
@@ -252,12 +259,19 @@ def create_scatter_plot(level='state', selected_state=None):
             data[x_col], data[y_col]
         )
         
-    else:
-        data = merged_data[merged_data['state_name'] == selected_state]
-        x_col, y_col = 'mobility_score', 'ai_exposure'
-        text_col = 'county_name'
-        size_col = None
-        title = f'{selected_state}: County-Level Mobility vs AI Exposure'
+    else:  # county level
+        if selected_state == 'All States' or selected_state is None:
+            data = merged_data
+            x_col, y_col = 'mobility_score', 'ai_exposure'
+            text_col = 'county_name'
+            size_col = None
+            title = 'County-Level: Mobility vs AI Exposure (All States)'
+        else:
+            data = merged_data[merged_data['state_name'] == selected_state]
+            x_col, y_col = 'mobility_score', 'ai_exposure'
+            text_col = 'county_name'
+            size_col = None
+            title = f'{selected_state}: County-Level Mobility vs AI Exposure'
         
         if len(data) >= 3:
             slope, intercept, r_value, p_val, std_err = stats.linregress(
@@ -511,7 +525,7 @@ def create_category_breakdown():
     return fig
 
 
-def create_ranking_table(level='state', metric='mobility_score', ranking_type='top', top_n=10):
+def create_ranking_table(level='state', metric='mobility_score', ranking_type='top', state_filter='all', top_n=10):
     """Create state or county ranking table"""
     
     if level == 'state':
@@ -557,7 +571,13 @@ def create_ranking_table(level='state', metric='mobility_score', ranking_type='t
     
     else:  # county level
         data_source = merged_data
-        level_label = 'Counties'
+        
+        # Filter by state if specified
+        if state_filter != 'all':
+            data_source = data_source[data_source['state_name'] == state_filter]
+            level_label = f'{state_filter} Counties'
+        else:
+            level_label = 'Counties (All States)'
         
         if metric == 'mobility_score':
             if ranking_type == 'top':
@@ -630,15 +650,15 @@ app.layout = dbc.Container([
                    className="text-primary mb-2"),
             html.P("Interactive dashboard exploring the relationship between economic mobility and AI-driven job displacement risk across U.S. counties",
                   className="lead text-muted"),
-            html.P("Created by Cesar Monagas and London Chamberlain",
-                  className="text-muted", style={"fontStyle": "italic"}),
             html.Div([
                 html.P([
                     html.Strong("Hypothesis: ", className="text-dark"),
                     html.Span("Counties with historically low intergenerational economic mobility will exhibit significantly higher AI job displacement risk creating a 'double disadvantage' where technology reinforces existing patterns of limited economic opportunity.",
                              className="text-muted")
-                ], className="mb-3", style={"fontStyle": "italic", "fontSize": "0.95rem"})
+                ], className="mb-2", style={"fontStyle": "italic", "fontSize": "0.95rem"})
             ]),
+            html.P("Created by Cesar Monagas and London Chamberlain",
+                  className="text-muted mb-3", style={"fontStyle": "italic"}),
             html.Hr()
         ])
     ], className="mt-4 mb-3"),
@@ -720,6 +740,18 @@ app.layout = dbc.Container([
                         className="mb-2",
                         style={'display': 'flex', 'gap': '15px'}
                     ),
+                    html.Div(id='state-filter-container', children=[
+                        html.Label("Filter by State:", className="fw-bold"),
+                        dcc.Dropdown(
+                            id='ranking-state-dropdown',
+                            options=[{'label': 'All Counties', 'value': 'all'}] + 
+                                    [{'label': state, 'value': state} 
+                                     for state in sorted(merged_data['state_name'].unique())],
+                            value='all',
+                            clearable=False,
+                            className="mb-2"
+                        ),
+                    ], style={'display': 'none'}),
                     html.Label("Ranking Type:", className="fw-bold"),
                     dcc.RadioItems(
                         id='ranking-type-radio',
@@ -766,22 +798,25 @@ app.layout = dbc.Container([
                                     {'label': ' State-Level', 'value': 'state'},
                                     {'label': ' County-Level', 'value': 'county'}
                                 ],
-                                value='state',
+                                value='county',
                                 inline=True,
                                 className="mb-2",
                                 style={'display': 'flex', 'gap': '15px'}
                             )
                         ], width=6),
                         dbc.Col([
-                            html.Label("Select State (County-Level only):", className="fw-bold"),
-                            dcc.Dropdown(
-                                id='state-dropdown',
-                                options=[{'label': state, 'value': state} 
-                                        for state in sorted(merged_data['state_name'].unique())],
-                                value='California',
-                                clearable=False,
-                                disabled=True
-                            )
+                            html.Div(id='state-dropdown-container', children=[
+                                html.Label("Select State (County-Level only):", className="fw-bold"),
+                                dcc.Dropdown(
+                                    id='state-dropdown',
+                                    options=[{'label': 'All States', 'value': 'All States'}] + 
+                                            [{'label': state, 'value': state} 
+                                             for state in sorted(merged_data['state_name'].unique())],
+                                    value='All States',
+                                    clearable=False,
+                                    disabled=False
+                                )
+                            ])
                         ], width=6)
                     ]),
                     dcc.Graph(id='scatter-plot')
@@ -888,21 +923,38 @@ def update_scatter(level, selected_state):
 
 
 @app.callback(
-    Output('state-dropdown', 'disabled'),
+    Output('state-dropdown-container', 'style'),
     Input('scatter-level-radio', 'value')
 )
 def toggle_state_dropdown(level):
-    return level == 'state'
+    """Hide state dropdown when state-level is selected"""
+    if level == 'state':
+        return {'display': 'none'}
+    else:
+        return {'display': 'block'}
+
+
+@app.callback(
+    Output('state-filter-container', 'style'),
+    Input('ranking-level-radio', 'value')
+)
+def toggle_state_filter(level):
+    """Show state filter only when county level is selected"""
+    if level == 'county':
+        return {'display': 'block', 'marginBottom': '0.5rem'}
+    else:
+        return {'display': 'none'}
 
 
 @app.callback(
     Output('ranking-table', 'figure'),
     [Input('ranking-level-radio', 'value'),
      Input('ranking-metric-dropdown', 'value'),
-     Input('ranking-type-radio', 'value')]
+     Input('ranking-type-radio', 'value'),
+     Input('ranking-state-dropdown', 'value')]
 )
-def update_ranking_table(level, metric, ranking_type):
-    return create_ranking_table(level=level, metric=metric, ranking_type=ranking_type)
+def update_ranking_table(level, metric, ranking_type, state_filter):
+    return create_ranking_table(level=level, metric=metric, ranking_type=ranking_type, state_filter=state_filter)
 
 
 # =============================================================================
