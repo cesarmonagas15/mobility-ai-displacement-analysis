@@ -93,7 +93,10 @@ def create_kpi_cards():
                 dbc.CardBody([
                     html.H6("Total Counties", className="text-muted"),
                     html.H2(f"{total_counties:,}", className="text-primary"),
-                    html.P("Across 52 states", className="text-sm")
+                    html.P("Across 52 states", className="text-sm mb-1"),
+                    html.P("U.S. counties analyzed in this study", 
+                          className="text-muted", 
+                          style={"fontSize": "0.75rem", "marginBottom": "0"})
                 ])
             ], className="shadow-sm")
         ], width=12, md=2),
@@ -103,7 +106,10 @@ def create_kpi_cards():
                 dbc.CardBody([
                     html.H6("Avg Mobility Score", className="text-muted"),
                     html.H2(f"{avg_mobility:.3f}", className="text-success"),
-                    html.P("Higher = Better Mobility", className="text-sm")
+                    html.P("Higher = Better Mobility", className="text-sm mb-1"),
+                    html.P("Measures children's economic advancement vs. parents", 
+                          className="text-muted", 
+                          style={"fontSize": "0.75rem", "marginBottom": "0"})
                 ])
             ], className="shadow-sm")
         ], width=12, md=2),
@@ -113,7 +119,10 @@ def create_kpi_cards():
                 dbc.CardBody([
                     html.H6("Avg AI Exposure", className="text-muted"),
                     html.H2(f"{avg_ai_exposure:.3f}", className="text-warning"),
-                    html.P("Higher = More Risk", className="text-sm")
+                    html.P("Higher = More Risk", className="text-sm mb-1"),
+                    html.P("Risk of job displacement due to AI automation", 
+                          className="text-muted", 
+                          style={"fontSize": "0.75rem", "marginBottom": "0"})
                 ])
             ], className="shadow-sm")
         ], width=12, md=2),
@@ -123,7 +132,10 @@ def create_kpi_cards():
                 dbc.CardBody([
                     html.H6("Double Disadvantage", className="text-muted"),
                     html.H2(f"{dd_pct:.1f}%", className="text-danger"),
-                    html.P(f"{double_disadvantage} counties", className="text-sm")
+                    html.P(f"{double_disadvantage} counties", className="text-sm mb-1"),
+                    html.P("Counties with both low mobility and high AI risk", 
+                          className="text-muted", 
+                          style={"fontSize": "0.75rem", "marginBottom": "0"})
                 ])
             ], className="shadow-sm")
         ], width=12, md=3),
@@ -133,7 +145,10 @@ def create_kpi_cards():
                 dbc.CardBody([
                     html.H6("Mobility vs AI Correlation", className="text-muted"),
                     html.H2(f"{pearson_r:.3f}", className="text-info"),
-                    html.P(f"p < 0.001 {'✓' if p_value < 0.05 else '✗'}", className="text-sm")
+                    html.P(f"p < 0.001 {'✓' if p_value < 0.05 else '✗'}", className="text-sm mb-1"),
+                    html.P("Negative = lower mobility associated with higher AI risk", 
+                          className="text-muted", 
+                          style={"fontSize": "0.75rem", "marginBottom": "0"})
                 ])
             ], className="shadow-sm")
         ], width=12, md=3),
@@ -653,7 +668,35 @@ app.layout = dbc.Container([
                                 clearable=False
                             )
                         ], width=12)
-                    ], className="mb-3"),
+                    ], className="mb-2"),
+                    
+                    # Classification Legend (shown only for County Classification view)
+                    html.Div(id='classification-legend', children=[
+                        html.Div([
+                            html.Strong("Classification Guide: ", style={'fontSize': '0.9rem'}),
+                            html.Span([
+                                html.Span("● ", style={'color': '#d62728', 'fontSize': '1.2rem', 'fontWeight': 'bold'}),
+                                html.Span("Double Disadvantage", style={'fontWeight': 'bold', 'color': '#d62728'}),
+                                html.Span(" - Low mobility + High AI risk", style={'fontSize': '0.85rem', 'color': '#666'})
+                            ], style={'marginRight': '15px', 'display': 'inline-block'}),
+                            html.Span([
+                                html.Span("● ", style={'color': '#ff7f0e', 'fontSize': '1.2rem', 'fontWeight': 'bold'}),
+                                html.Span("Tech Disruption", style={'fontWeight': 'bold', 'color': '#ff7f0e'}),
+                                html.Span(" - High mobility + High AI risk", style={'fontSize': '0.85rem', 'color': '#666'})
+                            ], style={'marginRight': '15px', 'display': 'inline-block'}),
+                            html.Span([
+                                html.Span("● ", style={'color': '#2ca02c', 'fontSize': '1.2rem', 'fontWeight': 'bold'}),
+                                html.Span("Safe", style={'fontWeight': 'bold', 'color': '#2ca02c'}),
+                                html.Span(" - High mobility + Low AI risk", style={'fontSize': '0.85rem', 'color': '#666'})
+                            ], style={'marginRight': '15px', 'display': 'inline-block'}),
+                            html.Span([
+                                html.Span("● ", style={'color': '#1f77b4', 'fontSize': '1.2rem', 'fontWeight': 'bold'}),
+                                html.Span("Stagnant Protected", style={'fontWeight': 'bold', 'color': '#1f77b4'}),
+                                html.Span(" - Low mobility + Low AI risk", style={'fontSize': '0.85rem', 'color': '#666'})
+                            ], style={'display': 'inline-block'})
+                        ], style={'display': 'flex', 'flexWrap': 'wrap', 'alignItems': 'center', 'gap': '8px', 'lineHeight': '1.8'})
+                    ]),
+                    
                     dcc.Graph(id='choropleth-map', config={'displayModeBar': False})
                 ])
             ], className="shadow-sm")
@@ -818,6 +861,18 @@ def update_kpis(metric):
 )
 def update_map(selected_metric):
     return create_choropleth_map(selected_metric)
+
+
+@app.callback(
+    Output('classification-legend', 'style'),
+    Input('map-metric-dropdown', 'value')
+)
+def toggle_legend(selected_metric):
+    """Show legend only when classification view is active"""
+    if selected_metric == 'category':
+        return {'padding': '10px', 'backgroundColor': '#f8f9fa', 'borderRadius': '5px', 'marginBottom': '1rem'}
+    else:
+        return {'display': 'none'}
 
 
 @app.callback(
