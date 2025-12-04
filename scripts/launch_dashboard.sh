@@ -4,6 +4,8 @@ echo "=========================================="
 echo "  Mobility-AI Dashboard Launcher"
 echo "=========================================="
 echo ""
+echo "Note: Run this script from the project root directory"
+echo ""
 
 # Check if Python is installed
 if ! command -v python3 &> /dev/null
@@ -14,9 +16,9 @@ fi
 
 echo "✓ Python3 found"
 
-# Check if merged_clean.csv exists
-if [ ! -f "merged_clean.csv" ]; then
-    echo "❌ Error: merged_clean.csv not found in current directory"
+# Check if merged_clean.csv exists in data/processed/
+if [ ! -f "data/processed/merged_clean.csv" ]; then
+    echo "❌ Error: merged_clean.csv not found in data/processed/"
     echo "   Please ensure the data file is present."
     exit 1
 fi
@@ -47,5 +49,5 @@ echo "Press CTRL+C to stop the server"
 echo ""
 
 # Launch the dashboard
-python3 interactive_dashboard.py
+python3 src/dashboard/interactive_dashboard.py
 

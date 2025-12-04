@@ -21,7 +21,11 @@ import json
 # =============================================================================
 
 print("Loading data...")
-merged_data = pd.read_csv('merged_clean.csv')
+# Load data from the processed data directory
+import os
+script_dir = os.path.dirname(os.path.abspath(__file__))
+data_path = os.path.join(script_dir, '..', '..', 'data', 'processed', 'merged_clean.csv')
+merged_data = pd.read_csv(data_path)
 
 # Ensure proper FIPS formatting
 merged_data['county_fips'] = merged_data['county_fips'].astype(str).str.zfill(5)
@@ -202,10 +206,15 @@ def create_choropleth_map(selected_metric='category'):
             title='AI Exposure Score by County'
         )
     
-    fig.update_geos(fitbounds="locations", visible=False)
+    fig.update_geos(
+        visible=False,
+        scope='usa',
+        projection_scale=0.9,
+        center={"lat": 38, "lon": -96}
+    )
     fig.update_layout(
         height=500,
-        margin={"r":0,"t":40,"l":0,"b":0},
+        margin={"r":20,"t":40,"l":20,"b":20},
         paper_bgcolor='rgba(0,0,0,0)',
         plot_bgcolor='rgba(0,0,0,0)'
     )
@@ -396,14 +405,14 @@ def create_distribution_plots():
         line_dash="dash",
         line_color="red",
         annotation_text="Mean",
-        annotation_position="top"
+        annotation_position="top left"
     )
     fig.add_vline(
         x=merged_data['mobility_score'].median(),
         line_dash="dash",
         line_color="green",
         annotation_text="Median",
-        annotation_position="top"
+        annotation_position="top right"
     )
     
     return fig
@@ -439,14 +448,14 @@ def create_ai_distribution_plot():
         line_dash="dash",
         line_color="red",
         annotation_text="Mean",
-        annotation_position="top"
+        annotation_position="top left"
     )
     fig.add_vline(
         x=merged_data['ai_exposure'].median(),
         line_dash="dash",
         line_color="green",
         annotation_text="Median",
-        annotation_position="top"
+        annotation_position="top right"
     )
     
     return fig
@@ -487,37 +496,90 @@ def create_category_breakdown():
     return fig
 
 
-def create_state_ranking_table(metric='mobility_score', top_n=10):
-    """Create state ranking table"""
+def create_ranking_table(level='state', metric='mobility_score', ranking_type='top', top_n=10):
+    """Create state or county ranking table"""
     
-    if metric == 'mobility_score':
-        sorted_data = state_summary.sort_values('mobility_score', ascending=False).head(top_n)
-        title = f'Top {top_n} States by Mobility Score'
-        metric_col = 'Mobility Score'
-    else:
-        sorted_data = state_summary.sort_values('ai_exposure', ascending=True).head(top_n)
-        title = f'Top {top_n} States by AI Protection (Lowest Exposure)'
-        metric_col = 'AI Exposure'
+    if level == 'state':
+        data_source = state_summary
+        level_label = 'States'
+        
+        if metric == 'mobility_score':
+            if ranking_type == 'top':
+                sorted_data = data_source.sort_values('mobility_score', ascending=False).head(top_n)
+                title = f'Top {top_n} {level_label} by Highest Mobility Score'
+            else:  # bottom
+                sorted_data = data_source.sort_values('mobility_score', ascending=True).head(top_n)
+                title = f'Bottom {top_n} {level_label} by Lowest Mobility Score'
+            metric_col = 'Mobility Score'
+        else:  # ai_exposure
+            if ranking_type == 'top':
+                sorted_data = data_source.sort_values('ai_exposure', ascending=True).head(top_n)
+                title = f'Top {top_n} {level_label} by Lowest AI Exposure'
+            else:  # bottom
+                sorted_data = data_source.sort_values('ai_exposure', ascending=False).head(top_n)
+                title = f'Bottom {top_n} {level_label} by Highest AI Exposure'
+            metric_col = 'AI Exposure'
+        
+        fig = go.Figure(data=[go.Table(
+            header=dict(
+                values=['<b>Rank</b>', '<b>State</b>', f'<b>{metric_col}</b>', '<b>Counties</b>'],
+                fill_color='#1f77b4',
+                font=dict(color='white', size=12),
+                align='left'
+            ),
+            cells=dict(
+                values=[
+                    list(range(1, len(sorted_data) + 1)),
+                    sorted_data['state_name'].tolist(),
+                    [f'{val:.3f}' for val in sorted_data[metric].tolist()],
+                    sorted_data['num_counties'].tolist()
+                ],
+                fill_color='lavender',
+                align='left',
+                font=dict(size=11)
+            )
+        )])
     
-    fig = go.Figure(data=[go.Table(
-        header=dict(
-            values=['<b>Rank</b>', '<b>State</b>', f'<b>{metric_col}</b>', '<b>Counties</b>'],
-            fill_color='#1f77b4',
-            font=dict(color='white', size=12),
-            align='left'
-        ),
-        cells=dict(
-            values=[
-                list(range(1, len(sorted_data) + 1)),
-                sorted_data['state_name'].tolist(),
-                [f'{val:.3f}' for val in sorted_data[metric].tolist()],
-                sorted_data['num_counties'].tolist()
-            ],
-            fill_color='lavender',
-            align='left',
-            font=dict(size=11)
-        )
-    )])
+    else:  # county level
+        data_source = merged_data
+        level_label = 'Counties'
+        
+        if metric == 'mobility_score':
+            if ranking_type == 'top':
+                sorted_data = data_source.sort_values('mobility_score', ascending=False).head(top_n)
+                title = f'Top {top_n} {level_label} by Highest Mobility Score'
+            else:  # bottom
+                sorted_data = data_source.sort_values('mobility_score', ascending=True).head(top_n)
+                title = f'Bottom {top_n} {level_label} by Lowest Mobility Score'
+            metric_col = 'Mobility Score'
+        else:  # ai_exposure
+            if ranking_type == 'top':
+                sorted_data = data_source.sort_values('ai_exposure', ascending=True).head(top_n)
+                title = f'Top {top_n} {level_label} by Lowest AI Exposure'
+            else:  # bottom
+                sorted_data = data_source.sort_values('ai_exposure', ascending=False).head(top_n)
+                title = f'Bottom {top_n} {level_label} by Highest AI Exposure'
+            metric_col = 'AI Exposure'
+        
+        fig = go.Figure(data=[go.Table(
+            header=dict(
+                values=['<b>Rank</b>', '<b>County</b>', '<b>State</b>', f'<b>{metric_col}</b>'],
+                fill_color='#1f77b4',
+                font=dict(color='white', size=12),
+                align='left'
+            ),
+            cells=dict(
+                values=[
+                    list(range(1, len(sorted_data) + 1)),
+                    sorted_data['county_name'].tolist(),
+                    sorted_data['state_name'].tolist(),
+                    [f'{val:.3f}' for val in sorted_data[metric].tolist()]
+                ],
+                fill_color='lavender',
+                align='left',
+                font=dict(size=11)
+            )
+        )])
     
     fig.update_layout(
         title=title,
@@ -549,12 +611,19 @@ app.layout = dbc.Container([
     # Header
     dbc.Row([
         dbc.Col([
-            html.H1("▪ Economic Mobility & AI Displacement Analysis", 
+            html.H1("Socioeconomic Mobility & AI Displacement Analysis", 
                    className="text-primary mb-2"),
             html.P("Interactive dashboard exploring the relationship between economic mobility and AI-driven job displacement risk across U.S. counties",
                   className="lead text-muted"),
             html.P("Created by Cesar Monagas and London Chamberlain",
-                  className="text-muted mb-3", style={"fontStyle": "italic"}),
+                  className="text-muted", style={"fontStyle": "italic"}),
+            html.Div([
+                html.P([
+                    html.Strong("Hypothesis: ", className="text-dark"),
+                    html.Span("Counties with historically low intergenerational economic mobility will exhibit significantly higher AI job displacement risk creating a 'double disadvantage' where technology reinforces existing patterns of limited economic opportunity.",
+                             className="text-muted")
+                ], className="mb-3", style={"fontStyle": "italic", "fontSize": "0.95rem"})
+            ]),
             html.Hr()
         ])
     ], className="mt-4 mb-3"),
@@ -567,7 +636,7 @@ app.layout = dbc.Container([
         dbc.Col([
             dbc.Card([
                 dbc.CardHeader([
-                    html.H5("▲ Geographic Visualization", className="mb-0"),
+                    html.H5("Geographic Visualization", className="mb-0"),
                 ]),
                 dbc.CardBody([
                     dbc.Row([
@@ -576,9 +645,9 @@ app.layout = dbc.Container([
                             dcc.Dropdown(
                                 id='map-metric-dropdown',
                                 options=[
-                                    {'label': '● County Classification', 'value': 'category'},
-                                    {'label': '▲ Mobility Score', 'value': 'mobility_score'},
-                                    {'label': '■ AI Exposure', 'value': 'ai_exposure'}
+                                    {'label': 'County Classification', 'value': 'category'},
+                                    {'label': 'Mobility Score', 'value': 'mobility_score'},
+                                    {'label': 'AI Exposure', 'value': 'ai_exposure'}
                                 ],
                                 value='category',
                                 clearable=False
@@ -593,20 +662,45 @@ app.layout = dbc.Container([
         dbc.Col([
             dbc.Card([
                 dbc.CardHeader([
-                    html.H5("■ State Rankings", className="mb-0"),
+                    html.H5("Rankings", className="mb-0"),
                 ]),
                 dbc.CardBody([
+                    html.Label("Level:", className="fw-bold"),
+                    dcc.RadioItems(
+                        id='ranking-level-radio',
+                        options=[
+                            {'label': ' State', 'value': 'state'},
+                            {'label': ' County', 'value': 'county'}
+                        ],
+                        value='state',
+                        inline=True,
+                        className="mb-2",
+                        style={'display': 'flex', 'gap': '15px'}
+                    ),
+                    html.Label("Ranking Type:", className="fw-bold"),
+                    dcc.RadioItems(
+                        id='ranking-type-radio',
+                        options=[
+                            {'label': ' Top Performers', 'value': 'top'},
+                            {'label': ' Worst Performers', 'value': 'bottom'}
+                        ],
+                        value='top',
+                        inline=True,
+                        className="mb-2",
+                        style={'display': 'flex', 'gap': '15px'}
+                    ),
+                    html.Label("Metric:", className="fw-bold"),
                     dcc.Dropdown(
                         id='ranking-metric-dropdown',
                         options=[
-                            {'label': '▲ By Mobility Score', 'value': 'mobility_score'},
-                            {'label': '♦ By AI Protection', 'value': 'ai_exposure'}
+                            {'label': 'By Mobility Score', 'value': 'mobility_score'},
+                            {'label': 'By AI Exposure', 'value': 'ai_exposure'}
                         ],
                         value='mobility_score',
                         clearable=False,
                         className="mb-3"
                     ),
-                    dcc.Graph(id='state-ranking-table', config={'displayModeBar': False})
+                    dcc.Graph(id='ranking-table', config={'displayModeBar': False})
                 ])
             ], className="shadow-sm")
         ], width=12, lg=4)
@@ -617,7 +711,7 @@ app.layout = dbc.Container([
         dbc.Col([
             dbc.Card([
                 dbc.CardHeader([
-                    html.H5("▼ Correlation Analysis", className="mb-0"),
+                    html.H5("Correlation Analysis", className="mb-0"),
                 ]),
                 dbc.CardBody([
                     dbc.Row([
@@ -631,7 +725,8 @@ app.layout = dbc.Container([
                                 ],
                                 value='state',
                                 inline=True,
-                                className="mb-2"
+                                className="mb-2",
+                                style={'display': 'flex', 'gap': '15px'}
                             )
                         ], width=6),
                         dbc.Col([
@@ -657,7 +752,7 @@ app.layout = dbc.Container([
         dbc.Col([
             dbc.Card([
                 dbc.CardHeader([
-                    html.H5("▬ Mobility Distribution", className="mb-0"),
+                    html.H5("Mobility Distribution", className="mb-0"),
                 ]),
                 dbc.CardBody([
                     dcc.Graph(id='mobility-distribution', figure=create_distribution_plots(),
@@ -669,7 +764,7 @@ app.layout = dbc.Container([
         dbc.Col([
             dbc.Card([
                 dbc.CardHeader([
-                    html.H5("▬ AI Exposure Distribution", className="mb-0"),
+                    html.H5("AI Exposure Distribution", className="mb-0"),
                 ]),
                 dbc.CardBody([
                     dcc.Graph(id='ai-distribution', figure=create_ai_distribution_plot(),
@@ -681,7 +776,7 @@ app.layout = dbc.Container([
         dbc.Col([
             dbc.Card([
                 dbc.CardHeader([
-                    html.H5("▬ Category Breakdown", className="mb-0"),
+                    html.H5("Category Breakdown", className="mb-0"),
                 ]),
                 dbc.CardBody([
                     dcc.Graph(id='category-breakdown', figure=create_category_breakdown(),
@@ -746,11 +841,13 @@ def toggle_state_dropdown(level):
 
 
 @app.callback(
-    Output('state-ranking-table', 'figure'),
-    Input('ranking-metric-dropdown', 'value')
+    Output('ranking-table', 'figure'),
+    [Input('ranking-level-radio', 'value'),
+     Input('ranking-metric-dropdown', 'value'),
+     Input('ranking-type-radio', 'value')]
 )
-def update_ranking_table(metric):
-    return create_state_ranking_table(metric=metric)
+def update_ranking_table(level, metric, ranking_type):
+    return create_ranking_table(level=level, metric=metric, ranking_type=ranking_type)
 
 
 # =============================================================================
@@ -759,7 +856,7 @@ def update_ranking_table(metric):
 
 if __name__ == '__main__':
     print("\n" + "="*70)
-    print("▶ LAUNCHING INTERACTIVE DASHBOARD")
+    print("LAUNCHING INTERACTIVE DASHBOARD")
     print("="*70)
     print("▪ Dashboard Features:")
     print("   • 5 Interactive KPI Cards")
